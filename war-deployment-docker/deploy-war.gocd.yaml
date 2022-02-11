@@ -1,7 +1,7 @@
 format_version: 10
 pipelines:
   deploy-war:
-    group: defaultGroup
+    group: deployments
     label_template: ${COUNT}
     lock_behavior: none
     display_order: -1
