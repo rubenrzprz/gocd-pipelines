@@ -1,0 +1,150 @@
+format_version: 10
+pipelines:
+  deploy-war:
+    group: defaultGroup
+    label_template: ${COUNT}
+    lock_behavior: none
+    display_order: -1
+    materials:
+      test-deployment:
+        git: https://github.com/rubenrzprz/gocd-test
+        shallow_clone: false
+        auto_update: true
+        branch: master
+    stages:
+    - junit-testing:
+        fetch_materials: true
+        keep_artifacts: false
+        clean_workspace: false
+        approval:
+          type: success
+          allow_only_on_success: false
+        jobs:
+          clean-test:
+            timeout: 0
+            tasks:
+            - exec:
+                arguments:
+                - clean
+                - test
+                command: mvn
+                run_if: passed
+    - build:
+        fetch_materials: true
+        keep_artifacts: true
+        clean_workspace: false
+        approval:
+          type: success
+          allow_only_on_success: true
+        jobs:
+          build-war:
+            timeout: 0
+            artifacts:
+            - build:
+                source: target/app-web-demo.war
+                destination: deployments
+            tasks:
+            - exec:
+                arguments:
+                - clean
+                - install
+                command: mvn
+                run_if: passed
+    - deploy:
+        fetch_materials: true
+        keep_artifacts: false
+        clean_workspace: false
+        approval:
+          type: success
+          allow_only_on_success: true
+        jobs:
+          build-containers:
+            timeout: 0
+            tasks:
+            - fetch:
+                is_file: false
+                source: deployments
+                destination: ''
+                pipeline: deploy-war
+                stage: build
+                job: build-war
+                artifact_origin: gocd
+                run_if: passed
+            - exec:
+                arguments:
+                - up
+                - --build
+                - -d
+                command: docker-compose
+                run_if: passed
+            - exec:
+                arguments:
+                - '777'
+                - deployments
+                - -R
+                command: chmod
+                run_if: passed
+    - check-deployment:
+        fetch_materials: false
+        keep_artifacts: false
+        clean_workspace: false
+        approval:
+          type: success
+          allow_only_on_success: true
+        jobs:
+          verify-deployment:
+            timeout: 0
+            tasks:
+            - exec:
+                on_cancel:
+                  exec:
+                    arguments:
+                    - down
+                    command: docker-compose
+                    run_if: passed
+                arguments:
+                - -q
+                - http://localhost:2121/app-web-demo
+                - -O
+                - index.html
+                command: wget
+                run_if: passed
+            - exec:
+                arguments:
+                - puerto
+                - index.html
+                command: grep
+                run_if: passed
+    - shutdown:
+        fetch_materials: false
+        keep_artifacts: false
+        clean_workspace: false
+        approval:
+          type: success
+          allow_only_on_success: false
+        jobs:
+          shut-docker:
+            timeout: 0
+            tasks:
+            - exec:
+                arguments:
+                - down
+                command: docker-compose
+                run_if: any
+          remove-deployments:
+            timeout: 0
+            tasks:
+            - exec:
+                arguments:
+                - chown
+                - -R
+                - go
+                - deployments
+                command: sudo
+                run_if: passed
+            - exec:
+                arguments:
+                - -rf
+                - deployments
+                command: rm
+                run_if: passed
